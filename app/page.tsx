@@ -17,19 +17,40 @@ interface Note {
 }
 
 export default function Home() {
+  // --- 🔒 登录状态管理 ---
+  const [session, setSession] = useState<any>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // --- 📝 笔记数据与表单状态 ---
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'learning' | 'work' | 'life'>('learning');
-
-  // --- 📝 表单状态变量 ---
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<'learning' | 'work' | 'life'>('learning');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 获取数据
+  // 1. 监听并检查用户的登录状态
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // 2. 当用户已登录时，才去拉取数据库内容
+  useEffect(() => {
+    if (!session) return;
+
     async function fetchNotes() {
+      setLoading(true);
       const { data, error } = await supabase
         .from('notes')
         .select('*')
@@ -41,16 +62,29 @@ export default function Home() {
       setLoading(false);
     }
     fetchNotes();
-  }, []);
+  }, [session]);
 
-  // --- 🚀 处理表单提交 ---
+  // --- 🚀 处理登录 ---
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setAuthLoading(false);
+    if (error) alert('登录失败: ' + error.message);
+  }
+
+  // --- 🚪 处理退出登录 ---
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setNotes([]); // 清空前端数据
+  }
+
+  // --- ➕ 处理发布笔记 ---
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) return alert('标题和内容不能为空哦！');
+    if (!title.trim() || !content.trim()) return alert('标题和内容不能为空！');
 
     setIsSubmitting(true);
-
-    // 将新笔记写入 Supabase
     const { data, error } = await supabase
       .from('notes')
       .insert([{ title, content, category }])
@@ -61,31 +95,96 @@ export default function Home() {
     if (error) {
       alert('发布失败: ' + error.message);
     } else if (data) {
-      // 成功后，将新数据塞到前端列表的最前面，实现无刷新实时更新
       setNotes([data[0] as Note, ...notes]);
-      // 清空输入框
       setTitle('');
       setContent('');
-      // 自动跳转到对应的标签页查看新内容
       setActiveTab(category);
     }
   }
 
-  const filteredNotes = notes.filter((note) => note.category === activeTab);
+  // --- 🗑️ 处理删除笔记 ---
+  async function handleDelete(id: number) {
+    if (!confirm('确定要删除这条记录吗？')) return;
 
+    const { error } = await supabase.from('notes').delete().eq('id', id);
+    if (error) {
+      alert('删除失败: ' + error.message);
+    } else {
+      setNotes(notes.filter(note => note.id !== id));
+    }
+  }
+
+  // --- 🚪 视图拦截：如果未登录，直接显示登录界面 ---
+  if (!session) {
+    return (
+      <main className="max-w-md mx-auto p-6 min-h-screen flex flex-col justify-center bg-slate-50">
+        <div className="bg-white p-8 border border-slate-100 rounded-2xl shadow-md space-y-6">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-slate-800">Mako's Personal OS</h1>
+            <p className="text-xs text-slate-400 mt-1">🔒 私人空间，请输入管理员凭证访问</p>
+          </div>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">管理员邮箱</label>
+              <input
+                type="email"
+                placeholder="your-email@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-slate-800"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">访问密码</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-slate-800"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-medium transition shadow-sm disabled:bg-slate-400"
+            >
+              {authLoading ? '正在验证安全凭证...' : '安全登录'}
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
+  // --- 🔓 以下为登录成功后才会展示的数字大脑界面 ---
+  const filteredNotes = notes.filter((note) => note.category === activeTab);
   const tabs = [
     { id: 'learning', name: '学习', icon: '📚' },
     { id: 'work', name: '工作', icon: '💼' },
     { id: 'life', name: '生活', icon: '🥤' },
   ] as const;
 
-  if (loading) {
-    return <div className="p-8 text-center text-slate-500">正在同步你的数字大脑...</div>;
-  }
-
   return (
     <main className="max-w-2xl mx-auto p-6 min-h-screen bg-slate-50">
-      <h1 className="text-3xl font-bold mb-8 text-slate-800 text-center">Mako's Personal OS</h1>
+      <div className="flex items-center justify-between mb-8 border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Mako's Personal OS</h1>
+          <p className="text-xs text-green-500 flex items-center mt-0.5">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse"></span>
+            已建立加密安全连接
+          </p>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="text-xs border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 px-3 py-1.5 rounded-xl transition shadow-sm"
+        >
+          退出系统 🚪
+        </button>
+      </div>
 
       {/* 📝 快捷发布面板 */}
       <form onSubmit={handleSubmit} className="mb-10 p-5 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4">
@@ -123,7 +222,7 @@ export default function Home() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-2.5 bg-blue-600 hover:bg-blue-750 text-white rounded-xl text-sm font-medium transition shadow-sm disabled:bg-blue-300"
+          className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition shadow-sm disabled:bg-blue-300"
         >
           {isSubmitting ? '正在发射到云端...' : '记录下来'}
         </button>
@@ -145,28 +244,40 @@ export default function Home() {
       </div>
 
       {/* 📄 内容列表 */}
-      <div className="space-y-4">
-        {filteredNotes.length === 0 ? (
-          <div className="text-center py-12 border-2 border-dashed rounded-xl bg-white text-slate-400">
-            当前板块还没有记录，在上方写一条吧！
-          </div>
-        ) : (
-          filteredNotes.map((note) => (
-            <div key={note.id} className="p-5 border border-slate-100 rounded-xl shadow-sm bg-white">
-              <h2 className="text-xl font-bold text-slate-800 mb-2">{note.title}</h2>
-              <p className="text-slate-600 whitespace-pre-wrap text-sm leading-relaxed">{note.content}</p>
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-50">
-                <span className="text-xs text-slate-400">
-                  ⏰ {new Date(note.inserted_at).toLocaleDateString()}
-                </span>
-                <span className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 rounded">
-                  {note.category.toUpperCase()}
-                </span>
-              </div>
+      {loading ? (
+        <div className="text-center py-12 text-slate-400 text-sm">正在解密并加载数据...</div>
+      ) : (
+        <div className="space-y-4">
+          {filteredNotes.length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed rounded-xl bg-white text-slate-400">
+              当前板块还没有记录，在上方写一条吧！
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            filteredNotes.map((note) => (
+              <div key={note.id} className="p-5 border border-slate-100 rounded-xl shadow-sm bg-white">
+                <h2 className="text-xl font-bold text-slate-800 mb-2">{note.title}</h2>
+                <p className="text-slate-600 whitespace-pre-wrap text-sm leading-relaxed">{note.content}</p>
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-50">
+                  <span className="text-xs text-slate-400">
+                    ⏰ {new Date(note.inserted_at).toLocaleDateString()}
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleDelete(note.id)}
+                      className="text-xs text-red-400 hover:text-red-600 transition px-2 py-0.5 rounded hover:bg-red-50"
+                    >
+                      删除
+                    </button>
+                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 rounded">
+                      {note.category.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </main>
   );
 }
