@@ -17,6 +17,14 @@ export const metadata: Metadata = {
   title: "Mako's Personal OS",
   description: "Next-Gen Personal Operating System & Knowledge Base",
   manifest: "/manifest.json",
+  icons: {
+    apple: "/icon-192.png", // 👈 改成你本地的本地图标路径
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Personal OS",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 // 2. 🎯 新增 viewport 配置，让手机浏览器顶部状态栏变成极客暗色
