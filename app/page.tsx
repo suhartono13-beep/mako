@@ -39,6 +39,22 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
+    // 在 Home 组件内部，加入这个生命周期监听
+  useEffect(() => {
+    if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(
+          (registration) => {
+            console.log('🛸 Mako OS 内核同步成功，服务区就绪: ', registration.scope);
+          },
+          (err) => {
+            console.log('❌ 内核同步失败: ', err);
+          }
+        );
+      });
+    }
+  }, []);
+
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
