@@ -31,12 +31,12 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<AppCategory>('learning');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 基础表单状态
+  // 表单状态
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<AppCategory>('learning');
 
-  // 🔤 单词表专用的扩展状态
+  // 单词卡状态
   const [isWordMode, setIsWordMode] = useState(false);
   const [wordName, setWordName] = useState('');
   const [wordMeaning, setWordMeaning] = useState('');
@@ -47,7 +47,7 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  // PWA 内核注册
+  // PWA 注册
   useEffect(() => {
     if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
       window.addEventListener('load', () => {
@@ -63,7 +63,7 @@ export default function Home() {
     }
   }, []);
 
-  // 暗黑模式检测
+  // 暗黑模式
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
@@ -160,10 +160,8 @@ export default function Home() {
     setNotes([]);
   }
 
-  // 提交总控（兼容标准笔记与智能单词卡）
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
     let finalTitle = title;
     let finalContent = content;
 
@@ -187,7 +185,6 @@ export default function Home() {
       alert('同步失败: ' + error.message);
     } else if (data) {
       setNotes([data[0] as Note, ...notes]);
-      // 清空表单
       setTitle('');
       setContent('');
       setWordName('');
@@ -207,7 +204,6 @@ export default function Home() {
     }
   }
 
-  // 单词记忆状态切换
   const toggleRevealWord = (id: number) => {
     if (revealedWords.includes(id)) {
       setRevealedWords(revealedWords.filter(item => item !== id));
@@ -216,11 +212,16 @@ export default function Home() {
     }
   };
 
-  // --- 登录界面 ---
+  // --- 登录状态拦截 ---
   if (!session) {
     return (
-      <main className="min-h-screen flex flex-col justify-center items-center bg-slate-50 dark:bg-[#09090b] transition-colors duration-500 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-slate-50 to-slate-100 dark:from-slate-900 dark:via-[#09090b] dark:to-black">
-        <div className="w-full max-w-md p-8 bg-white/60 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-3xl shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] space-y-8 relative overflow-hidden">
+      <main className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden bg-slate-50 dark:bg-[#09090b]">
+        {/* 固定背景层 */}
+        <div className="fixed inset-0 -z-10 w-full h-full bg-slate-50 dark:bg-[#09090b] bg-[linear-gradient(to_right,#00000006_1px,transparent_1px),linear-gradient(to_bottom,#00000006_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:4rem_4rem]">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[300px] bg-gradient-to-r from-indigo-500/5 via-purple-500/10 to-cyan-500/5 blur-[120px] rounded-full"></div>
+        </div>
+
+        <div className="w-full max-w-md p-8 bg-white/60 dark:bg-black/40 backdrop-blur-xl border border-slate-200/50 dark:border-white/10 rounded-3xl shadow-xl space-y-8 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400"></div>
           <div className="text-center">
             <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-500 dark:from-white dark:to-slate-400 tracking-tight">
@@ -281,7 +282,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#09090b] transition-colors duration-500 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-slate-50 to-slate-100 dark:from-slate-900 dark:via-[#09090b] dark:to-black relative">
+    <div className="min-h-screen relative text-slate-800 dark:text-slate-100 select-text">
+      
+      {/* 🌌 ✨ 核心修复：固定定位网格流光背景层（不再随滚动条断开） */}
+      <div className="fixed inset-0 -z-10 w-full h-full bg-slate-50 dark:bg-[#09090b] bg-[linear-gradient(to_right,#00000006_1px,transparent_1px),linear-gradient(to_bottom,#00000006_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:4rem_4rem] transition-colors duration-500">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[300px] bg-gradient-to-r from-indigo-500/5 via-purple-500/10 to-cyan-500/5 blur-[120px] rounded-full"></div>
+      </div>
       
       {/* 🔮 顶部导航 */}
       <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/70 dark:bg-[#09090b]/70 border-b border-slate-200/50 dark:border-white/5">
@@ -291,7 +297,7 @@ export default function Home() {
               <span className="text-white font-bold text-sm">OS</span>
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100 tracking-tight">Personal OS</h1>
+              <h1 className="text-lg font-bold tracking-tight">Personal OS</h1>
               <div className="flex items-center mt-0.5 space-x-1.5">
                 <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
                 <span className="text-[10px] text-emerald-500/80 dark:text-emerald-400/80 font-mono uppercase tracking-wider">Sys Online</span>
@@ -310,7 +316,6 @@ export default function Home() {
       </nav>
 
       <main className="max-w-4xl mx-auto p-6 mt-4 space-y-8">
-        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 📝 左侧面板：智能输入终端 */}
           <div className="md:col-span-2 space-y-6">
@@ -323,7 +328,6 @@ export default function Home() {
                 </h3>
                 
                 <div className="flex items-center space-x-3">
-                  {/* 🔤 只有选择 Knowledge 学习板块时，才展示单词模式切向器 */}
                   {category === 'learning' && (
                     <button type="button" onClick={() => setIsWordMode(!isWordMode)} className={`text-xs px-3 py-1.5 rounded-full font-bold transition-all ${isWordMode ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'}`}>
                       {isWordMode ? '✓ Word Mode' : '+ Word Tool'}
@@ -336,24 +340,21 @@ export default function Home() {
                 </div>
               </div>
               
-              {/* 动态输入界面架构 */}
               {isWordMode && category === 'learning' ? (
-                /* 🔤 单词矩阵专属输入框 */
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-3">
-                    <input type="text" placeholder="New Word (如: Serendipity)" value={wordName} onChange={(e) => setWordName(e.target.value)} className="col-span-2 px-4 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl text-base font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-slate-800 dark:text-slate-100 transition-all" />
+                    <input type="text" placeholder="New Word..." value={wordName} onChange={(e) => setWordName(e.target.value)} className="col-span-2 px-4 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl text-base font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-slate-800 dark:text-slate-100 transition-all" />
                     <select value={category} onChange={(e) => setCategory(e.target.value as AppCategory)} className="px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none text-slate-700 dark:text-slate-300 font-medium">
                       {tabs.map(t => <option key={t.id} value={t.id}>{t.icon} {t.name}</option>)}
                     </select>
                   </div>
-                  <input type="text" placeholder="Phonetic & Meaning (如: /ˌserənˈdipədē/ 缘分，不期而至的美好)" value={wordMeaning} onChange={(e) => setWordMeaning(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-slate-800 dark:text-slate-100 transition-all" />
-                  <textarea placeholder="Context Example Sentence... (支持 Markdown)" value={wordExample} onChange={(e) => setWordExample(e.target.value)} rows={3} className="w-full p-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-slate-800 dark:text-slate-100 font-mono resize-none" />
+                  <input type="text" placeholder="Phonetic & Meaning..." value={wordMeaning} onChange={(e) => setWordMeaning(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-slate-800 dark:text-slate-100 transition-all" />
+                  <textarea placeholder="Context Example Sentence..." value={wordExample} onChange={(e) => setWordExample(e.target.value)} rows={3} className="w-full p-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-slate-800 dark:text-slate-100 font-mono resize-none" />
                   <button type="submit" disabled={isSubmitting} className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-sm font-bold tracking-wide transition-all hover:opacity-90 shadow-md">
                     {isSubmitting ? 'Injecting...' : 'INJECT INTO VOCAB MATRIX'}
                   </button>
                 </div>
               ) : (
-                /* 📝 标准笔记输入框 */
                 <div className="space-y-4">
                   <div className="flex space-x-3">
                     <input type="text" placeholder="Block Title..." value={title} onChange={(e) => setTitle(e.target.value)} className="flex-1 px-4 py-2.5 bg-transparent border-b-2 border-slate-200 dark:border-slate-800 text-lg font-semibold focus:outline-none focus:border-indigo-500 dark:focus:border-cyan-400 text-slate-800 dark:text-slate-100 transition-colors placeholder-slate-300 dark:placeholder-slate-700" />
@@ -370,7 +371,7 @@ export default function Home() {
             </form>
           </div>
 
-          {/* 🎛️ 右侧：Bento Box 风格面板 */}
+          {/* 🎛️ 右侧：Bento Box 面板 */}
           <div className="space-y-6">
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -430,7 +431,6 @@ export default function Home() {
               </div>
             ) : (
               filteredNotes.map((note) => {
-                // 判断此节点是否为智能单词卡
                 const isWordCard = note.title.startsWith('🔤 ');
                 const cleanTitle = isWordCard ? note.title.replace('🔤 ', '') : note.title;
                 const isRevealed = revealedWords.includes(note.id);
@@ -444,7 +444,7 @@ export default function Home() {
                   >
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight flex items-center">
+                        <h2 className="text-xl font-extrabold tracking-tight flex items-center">
                           {cleanTitle}
                           {isWordCard && (
                             <span className="ml-3 text-[10px] font-mono px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-md uppercase tracking-widest">
@@ -458,7 +458,6 @@ export default function Home() {
                       </span>
                     </div>
                     
-                    {/* 单词卡的核心黑客解密（Blur）交互设计 */}
                     {isWordCard ? (
                       <div 
                         onClick={() => toggleRevealWord(note.id)} 
@@ -480,8 +479,7 @@ export default function Home() {
                         )}
                       </div>
                     ) : (
-                      /* 标准 Markdown 文献渲染 */
-                      <div className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed prose prose-slate dark:prose-invert max-w-none 
+                      <div className="text-sm leading-relaxed prose prose-slate dark:prose-invert max-w-none 
                         prose-headings:font-bold prose-headings:tracking-tight
                         prose-a:text-indigo-500 hover:prose-a:text-indigo-400
                         prose-img:rounded-2xl prose-img:shadow-md prose-img:border prose-img:border-slate-200/50 dark:prose-img:border-white/10
