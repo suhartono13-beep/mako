@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '@/app/layout';
+import { toast } from 'sonner';
 
 type AppCategory = 'learning' | 'work' | 'life' | 'entertainment';
 
@@ -24,106 +25,83 @@ export default function Matrix() {
   useEffect(() => {
     async function fetchNotes() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('notes')
-        .select('*')
-        .order('inserted_at', { ascending: false });
-
+      const { data, error } = await supabase.from('notes').select('*').order('inserted_at', { ascending: false });
       if (!error && data) setNotes(data as Note[]);
       setLoading(false);
     }
     fetchNotes();
   }, []);
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('警告：确认删除该区块？')) return;
-    const { error } = await supabase.from('notes').delete().eq('id', id);
-    if (error) alert('删除失败: ' + error.message);
-    else setNotes(notes.filter(note => note.id !== id));
+  const handleDelete = (id: number) => {
+    toast('Delete this block?', {
+      description: 'This action cannot be undone.',
+      action: {
+        label: 'Delete',
+        onClick: async () => {
+          const { error } = await supabase.from('notes').delete().eq('id', id);
+          if (error) {
+            toast.error('Delete failed', { description: error.message });
+          } else {
+            setNotes((prev) => prev.filter((note) => note.id !== id));
+            toast.success('Block deleted');
+          }
+        },
+      },
+      cancel: {
+        label: 'Cancel',
+        onClick: () => console.log('Delete cancelled'),
+      },
+    });
   };
 
   const toggleRevealWord = (id: number) => {
-    if (revealedWords.includes(id)) {
-      setRevealedWords(revealedWords.filter(item => item !== id));
-    } else {
-      setRevealedWords([...revealedWords, id]);
-    }
+    if (revealedWords.includes(id)) setRevealedWords(revealedWords.filter(item => item !== id));
+    else setRevealedWords([...revealedWords, id]);
   };
 
   const filteredNotes = notes.filter((note) => {
     const matchesTab = note.category === activeTab;
-    const matchesSearch = 
-      note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      note.content.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = note.title.toLowerCase().includes(searchQuery.toLowerCase()) || note.content.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesTab && matchesSearch;
   });
 
-  const tabs: { id: AppCategory; name: string; icon: string }[] = [
-    { id: 'learning', name: 'Knowledge', icon: '🧠' },
-    { id: 'work', name: 'Operations', icon: '⚡' },
-    { id: 'life', name: 'Biometrics', icon: '🧬' },
-    { id: 'entertainment', name: 'Simulations', icon: '🎮' },
+  const tabs: { id: AppCategory; name: string }[] = [
+    { id: 'learning', name: 'Knowledge' },
+    { id: 'work', name: 'Operations' },
+    { id: 'life', name: 'Biometrics' },
+    { id: 'entertainment', name: 'Simulations' },
   ];
 
-  const tabWidgets: Record<AppCategory, { name: string, icon: string, url: string }[]> = {
-    learning: [
-      { name: 'GitHub', icon: '🐙', url: 'https://github.com' },
-      { name: 'DeepL Trans', icon: '🌐', url: 'https://www.deepl.com' },
-    ],
-    work: [
-      { name: 'Comm Link', icon: '📧', url: '#' },
-      { name: 'Timeline', icon: '📅', url: '#' },
-    ],
-    life: [
-      { name: 'Ledger', icon: '💳', url: '#' },
-      { name: 'Atmosphere', icon: '⛅', url: '#' },
-    ],
-    entertainment: [
-      { name: 'Holodeck', icon: '📺', url: 'https://youtube.com' },
-      { name: 'Cinema', icon: '🎬', url: 'https://movie.douban.com' },
-    ]
-  };
-
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* 搜索栏与 Bento 挂件区 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2 relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-lg">⌕</span>
-          <input type="text" placeholder="Query Matrix Database..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-white/60 dark:bg-white/[0.02] backdrop-blur-xl border border-slate-200/50 dark:border-white/5 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-slate-800 dark:text-slate-100 font-mono shadow-sm" />
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in relative z-10">
+      
+      {/* ✨ 极简搜索与导航：应用毛玻璃 ✨ */}
+      <div className="space-y-4">
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">⌕</span>
+          <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/60 dark:bg-[#1C1C1E]/60 backdrop-blur-xl border border-white/40 dark:border-white/[0.05] rounded-2xl text-sm focus:outline-none focus:bg-white/80 dark:focus:bg-[#1C1C1E]/80 focus:ring-2 focus:ring-blue-500/50 shadow-sm transition-all" />
         </div>
 
-        <div className="p-4 bg-white/60 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/5 rounded-2xl shadow-sm">
-          <div className="grid grid-cols-2 gap-2">
-            {tabWidgets[activeTab].map((widget, idx) => (
-              <a key={idx} href={widget.url} target="_blank" rel="noreferrer" className="flex items-center p-2.5 bg-slate-50 dark:bg-black/30 border border-slate-100 dark:border-white/5 rounded-xl hover:border-indigo-400 transition-all text-xs font-bold">
-                <span className="mr-2 text-base">{widget.icon}</span> {widget.name}
-              </a>
-            ))}
-          </div>
+        {/* Apple 风格 Segmented Control */}
+        <div className="flex p-1 bg-black/5 dark:bg-white/10 backdrop-blur-xl rounded-xl">
+          {tabs.map((tab) => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === tab.id ? 'bg-white/90 dark:bg-[#1C1C1E]/90 text-black dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white'}`}>
+              {tab.name}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 🧭 宽距分类导航栏 */}
-      <div className="flex p-1.5 bg-slate-200/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl">
-        {tabs.map((tab) => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-md scale-[1.01]' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}>
-            <span className="mr-1.5 opacity-80">{tab.icon}</span> {tab.name}
-          </button>
-        ))}
-      </div>
-
-      {/* 📄 记忆卡片流 */}
+      {/* ✨ 数据流卡片：应用毛玻璃 ✨ */}
       {loading ? (
-        <div className="flex justify-center items-center py-20 font-mono text-sm text-slate-400">
-          <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mr-3"></div>
-          Fetching Data Matrix...
+        <div className="flex justify-center items-center py-20 text-sm text-gray-400">
+          Loading Data...
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6">
+        <div className="grid grid-cols-1 gap-5 pt-4">
           {filteredNotes.length === 0 ? (
-            <div className="text-center py-20 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white/10 text-slate-400 font-mono text-sm">
-              &gt; {searchQuery ? '0 records found in current node.' : 'Database empty. Awaiting input terminal connection.'}
+            <div className="text-center py-20 text-gray-400 text-sm bg-white/40 dark:bg-[#1C1C1E]/40 backdrop-blur-md rounded-3xl border border-dashed border-black/10 dark:border-white/10">
+              No records found.
             </div>
           ) : (
             filteredNotes.map((note) => {
@@ -132,34 +110,33 @@ export default function Matrix() {
               const isRevealed = revealedWords.includes(note.id);
 
               return (
-                <div key={note.id} className={`group p-8 bg-white/60 dark:bg-white/[0.02] backdrop-blur-xl border border-slate-200/50 dark:border-white/5 rounded-[2rem] shadow-sm hover:shadow-xl transition-all duration-300 ${isWordCard ? 'hover:border-purple-500/40 border-l-4 border-l-purple-500/70' : 'hover:border-indigo-500/30'}`}>
-                  <div className="flex justify-between items-start mb-4">
-                    <h2 className="text-xl font-extrabold tracking-tight flex items-center">
-                      {cleanTitle}
-                      {isWordCard && <span className="ml-3 text-[9px] font-mono px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded uppercase tracking-widest">Vocab Card</span>}
-                    </h2>
-                    <span className="px-2.5 py-1 text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-lg uppercase tracking-wider">{note.category}</span>
+                <div key={note.id} className="group p-6 bg-white/60 dark:bg-[#1C1C1E]/60 backdrop-blur-2xl border border-white/40 dark:border-white/[0.05] rounded-[1.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 relative overflow-hidden">
+                  {isWordCard && <div className="absolute left-0 top-0 w-1.5 h-full bg-blue-500/80"></div>}
+                  
+                  <div className="flex justify-between items-start mb-3">
+                    <h2 className="text-lg font-semibold tracking-tight">{cleanTitle}</h2>
                   </div>
                   
                   {isWordCard ? (
-                    <div onClick={() => toggleRevealWord(note.id)} className={`cursor-pointer p-5 rounded-2xl border transition-all ${isRevealed ? 'bg-slate-50/50 dark:bg-black/10 border-slate-100 dark:border-white/5' : 'bg-purple-500/[0.01] border-purple-500/10 hover:bg-purple-500/[0.03]'}`}>
-                      <div className={`transition-all duration-300 text-sm leading-relaxed prose dark:prose-invert max-w-none ${isRevealed ? 'blur-0 opacity-100' : 'blur-md opacity-30 select-none'}`}>
+                    <div onClick={() => toggleRevealWord(note.id)} className={`cursor-pointer p-4 rounded-xl backdrop-blur-md transition-all border border-white/20 dark:border-white/5 ${isRevealed ? 'bg-black/[0.02] dark:bg-white/[0.02]' : 'bg-blue-500/5'}`}>
+                      <div className={`text-sm leading-relaxed prose dark:prose-invert max-w-none transition-all duration-300 ${isRevealed ? 'blur-0 opacity-100' : 'blur-md opacity-30 select-none'}`}>
                         <ReactMarkdown>{note.content}</ReactMarkdown>
                       </div>
-                      {!isRevealed && <div className="text-center py-1 text-xs font-mono font-bold text-purple-500/80 animate-pulse tracking-wider">⚡ CLICK TO DECRYPT MEANING ⚡</div>}
+                      {!isRevealed && <div className="text-center mt-2 text-xs font-medium text-blue-500">Tap to reveal</div>}
                     </div>
                   ) : (
-                    <div className="text-sm leading-relaxed prose dark:prose-invert max-w-none prose-img:rounded-2xl prose-code:text-cyan-500 prose-code:font-mono prose-code:text-xs">
+                    <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300 prose dark:prose-invert max-w-none prose-img:rounded-xl">
                       <ReactMarkdown>{note.content}</ReactMarkdown>
                     </div>
                   )}
                   
-                  <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100 dark:border-white/5">
-                    <span className="text-[11px] text-slate-400 font-mono flex items-center">
-                      <span className="w-1.5 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full mr-2"></span>
-                      {new Date(note.inserted_at).toLocaleString()}
+                  <div className="flex items-center justify-between mt-5 pt-4 border-t border-black/[0.05] dark:border-white/[0.05]">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {new Date(note.inserted_at).toLocaleDateString()}
                     </span>
-                    <button onClick={() => handleDelete(note.id)} className="opacity-0 group-hover:opacity-100 text-xs font-bold text-red-500 hover:text-red-400 transition-all px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/10">DELETE</button>
+                    <button onClick={() => handleDelete(note.id)} className="opacity-0 group-hover:opacity-100 text-xs font-medium text-red-500 hover:text-red-600 transition-opacity">
+                      Delete
+                    </button>
                   </div>
                 </div>
               );
