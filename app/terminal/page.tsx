@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/app/layout';
+import { supabase } from '@/lib/supabase'; // 或者你实际存放 supabase 客户端的绝对路径
 import { toast } from 'sonner';
 
 type AppCategory = 'learning' | 'work' | 'life' | 'entertainment';
