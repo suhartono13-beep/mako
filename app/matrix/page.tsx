@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { supabase } from '@/app/layout';
+import { supabase } from '@/lib/supabase'; // 或者你实际存放 supabase 客户端的绝对路径
 import { toast } from 'sonner';
 import Link from 'next/link';
 
