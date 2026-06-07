@@ -1,196 +1,223 @@
 'use client';
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/app/layout';
 import { toast } from 'sonner';
-import imageCompression from 'browser-image-compression';
 
 type AppCategory = 'learning' | 'work' | 'life' | 'entertainment';
 
+// 🛸 升级版：终端参数接收器（处理星际穿梭编辑 & 空间专属新建）
+function TerminalParamsReceiver({ 
+  setTitle, 
+  setContent,
+  setCategory,
+  setEditingId,
+  setIsWordMode
+}: { 
+  setTitle: (t: string) => void; 
+  setContent: (c: string) => void; 
+  setCategory: (c: AppCategory) => void;
+  setEditingId: (id: string) => void;
+  setIsWordMode: (mode: boolean) => void;
+}) {
+  const searchParams = useSearchParams();
+  const noteId = searchParams.get('id');
+  const spaceCategory = searchParams.get('category');
+  const initMode = searchParams.get('mode');
+
+  useEffect(() => {
+    // 逻辑 A：如果有 category 参数，说明是从 Space 启动的，锁定分类
+    if (spaceCategory) {
+      setCategory(spaceCategory as AppCategory);
+    }
+    // 逻辑 B：如果指定了 word 模式，自动开启单词模式
+    if (initMode === 'word') {
+      setIsWordMode(true);
+    }
+
+    // 逻辑 C：如果有 id，说明是穿梭过来修改旧笔记的
+    if (!noteId) return;
+    const loadTargetNote = async () => {
+      try {
+        const { data, error } = await supabase.from('notes').select('*').eq('id', noteId).single();
+        if (error) throw error;
+        if (data) {
+          setTitle(data.title || '');
+          setContent(data.content || '');
+          if (data.category) setCategory(data.category as AppCategory);
+          setEditingId(noteId);
+          toast.success('🛸 目标数据坐标已加载');
+        }
+      } catch (err) {
+        toast.error('穿梭失败，无法读取坐标');
+      }
+    };
+    loadTargetNote();
+  }, [noteId, spaceCategory, initMode, setTitle, setContent, setCategory, setEditingId, setIsWordMode]);
+
+  return null;
+}
+
 export default function Terminal() {
   const router = useRouter();
-  const [category, setCategory] = useState<AppCategory>('learning');
-  const [isWordMode, setIsWordMode] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isPolishing, setIsPolishing] = useState(false); // ✨ 新增：AI 润色状态
-
+  
+  // 核心状态
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [wordName, setWordName] = useState('');
-  const [wordMeaning, setWordMeaning] = useState('');
-  const [wordExample, setWordExample] = useState('');
+  const [category, setCategory] = useState<AppCategory>('learning');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 处理图片上传压缩
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // 单词模式状态
+  const [isWordMode, setIsWordMode] = useState(false);
+  const [wordData, setWordData] = useState({ word: '', definition: '', example: '' });
 
-    try {
-      setUploading(true);
-      const toastId = toast.loading('Compressing image...');
-      
-      const options = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true, initialQuality: 0.8 };
-      const compressedFile = await imageCompression(file, options);
-      
-      toast.loading('Uploading to database...', { id: toastId });
-
-      const fileExt = compressedFile.name.split('.').pop() || 'jpg';
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('note-images').upload(fileName, compressedFile);
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage.from('note-images').getPublicUrl(fileName);
-
-      if (isWordMode) setWordExample((prev) => prev + `\n![Image](${publicUrl})\n`);
-      else setContent((prev) => prev + `\n![Image](${publicUrl})\n`);
-      
-      toast.success('Image Ready', { id: toastId });
-    } catch (error: any) {
-      toast.error('Process Failed', { description: error.message });
-    } finally {
-      setUploading(false);
-      e.target.value = '';
-    }
-  }
-
-  // ✨ 新增：处理 AI 润色逻辑
-  async function handleAIPolish() {
-    if (!content.trim()) {
-      toast.warning('No Content', { description: '请先输入一些内容再进行润色。' });
+  // 提交逻辑
+  const handleSubmit = async () => {
+    if (!title.trim() && !isWordMode) {
+      toast.error('Title is required in standard mode');
       return;
     }
 
+    // 如果是单词模式，自动合成标题和内容
+    const finalTitle = isWordMode ? `[Word] ${wordData.word}` : title;
+    const finalContent = isWordMode 
+      ? `**Word:** ${wordData.word}\n**Definition:** ${wordData.definition}\n**Example:** ${wordData.example}`
+      : content;
+
     try {
-      setIsPolishing(true);
-      const toastId = toast.loading('AI is polishing your note...');
+      setIsSubmitting(true);
+      const payload = {
+        title: finalTitle,
+        content: finalContent,
+        category: category,
+        updated_at: new Date().toISOString()
+      };
 
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: content }),
-      });
+      let error;
+      if (editingId) {
+        // 更新逻辑
+        const { error: updateError } = await supabase.from('notes').update(payload).eq('id', editingId);
+        error = updateError;
+      } else {
+        // 新增逻辑
+        const { error: insertError } = await supabase.from('notes').insert([payload]);
+        error = insertError;
+      }
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (!response.ok) throw new Error(data.error || 'Failed to polish text');
+      toast.success(editingId ? 'Block Updated' : 'Block Committed');
+      
+      // ✨ 提交成功后，智能返回对应的空间页面！
+      router.push(`/space/${category}`);
 
-      setContent(data.result);
-      toast.success('Magic Applied ✨', { id: toastId });
-    } catch (error: any) {
-      toast.error('AI Polish Failed', { description: error.message });
+    } catch (err: any) {
+      toast.error('Failed to commit', { description: err.message });
     } finally {
-      setIsPolishing(false);
+      setIsSubmitting(false);
     }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    let finalTitle = title;
-    let finalContent = content;
-
-    if (isWordMode && category === 'learning') {
-      if (!wordName.trim() || !wordMeaning.trim()) {
-        toast.warning('Missing Fields', { description: '请填写单词和释义。' });
-        return;
-      }
-      finalTitle = `🔤 ${wordName.trim()}`;
-      finalContent = `### 📖 释义与音标\n${wordMeaning.trim()}\n\n### 💡 上下文例句\n${wordExample.trim() || '暂无例句'}`;
-    } else {
-      if (!finalTitle.trim() || !finalContent.trim()) {
-        toast.warning('Missing Fields', { description: '请填写标题与内容。' });
-        return;
-      }
-    }
-
-    setIsSubmitting(true);
-    const { error } = await supabase.from('notes').insert([{ title: finalTitle, content: finalContent, category }]);
-    setIsSubmitting(false);
-
-    if (error) {
-      toast.error('Sync Failed', { description: error.message });
-    } else {
-      toast.success('Block Committed');
-      router.push('/matrix');
-    }
-  }
+  };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fade-in relative z-10">
-      <div className="mb-8 flex justify-between items-end">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Terminal</h2>
-          <p className="text-sm text-gray-500 mt-1">Initialize a new data block.</p>
+    <div className="max-w-3xl mx-auto space-y-6 animate-fade-in pb-20">
+      
+      {/* 隐式参数接收器 */}
+      <Suspense fallback={null}>
+        <TerminalParamsReceiver 
+          setTitle={setTitle} 
+          setContent={setContent} 
+          setCategory={setCategory} 
+          setEditingId={setEditingId} 
+          setIsWordMode={setIsWordMode} 
+        />
+      </Suspense>
+
+      {/* 头部 */}
+      <div className="flex items-center justify-between border-b border-black/[0.05] dark:border-white/[0.05] pb-4">
+        <h1 className="text-2xl font-bold tracking-tight">
+          {editingId ? 'Edit Block 🛸' : 'Terminal >_'}
+        </h1>
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={() => setIsWordMode(!isWordMode)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+              isWordMode 
+                ? 'bg-black text-white border-black dark:bg-white dark:text-black' 
+                : 'bg-transparent border-gray-300 text-gray-500 hover:border-gray-500'
+            }`}
+          >
+            {isWordMode ? 'Word Mode: ON' : 'Word Mode: OFF'}
+          </button>
+          <select 
+            value={category}
+            onChange={(e) => setCategory(e.target.value as AppCategory)}
+            className="text-xs bg-black/[0.03] dark:bg-white/[0.03] border border-black/10 dark:border-white/10 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-gray-400"
+          >
+            <option value="learning">🧠 Learning</option>
+            <option value="work">💼 Work</option>
+            <option value="life">🌿 Life</option>
+            <option value="entertainment">🎮 Entertainment</option>
+          </select>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-6 md:p-8 bg-white/60 dark:bg-[#1C1C1E]/60 backdrop-blur-2xl border border-white/40 dark:border-white/[0.05] rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-6">
-        
-        <div className="flex justify-between items-center pb-4 border-b border-black/[0.05] dark:border-white/[0.05]">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {isWordMode && category === 'learning' ? 'Vocabulary Entry' : 'Standard Block'}
-          </h3>
-          
-          <div className="flex items-center space-x-3">
-            {category === 'learning' && (
-              <button type="button" onClick={() => setIsWordMode(!isWordMode)} className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${isWordMode ? 'bg-black dark:bg-white text-white dark:text-black shadow-md' : 'bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-200 hover:bg-black/10 dark:hover:bg-white/20'}`}>
-                {isWordMode ? 'Word Mode' : 'Toggle Word'}
-              </button>
-            )}
-            <label className={`text-xs flex items-center space-x-1.5 px-3 py-1.5 rounded-full cursor-pointer font-medium transition-all ${uploading ? 'bg-black/5 text-gray-400 cursor-not-allowed' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'}`}>
-              <span>{uploading ? 'Processing...' : 'Attach Image'}</span>
-              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} className="hidden" />
-            </label>
-          </div>
-        </div>
-        
-        {isWordMode && category === 'learning' ? (
-          <div className="space-y-4">
-            <div className="flex space-x-3">
-              <input type="text" placeholder="Word" value={wordName} onChange={(e) => setWordName(e.target.value)} className="flex-1 px-4 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-base font-medium focus:bg-white/80 dark:focus:bg-[#1C1C1E]/80 backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all outline-none" />
-              <select value={category} onChange={(e) => setCategory(e.target.value as AppCategory)} className="w-1/3 px-3 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500/50 backdrop-blur-md transition-all outline-none">
-                <option value="learning">Knowledge</option>
-                <option value="work">Operations</option>
-                <option value="life">Biometrics</option>
-                <option value="entertainment">Simulations</option>
-              </select>
-            </div>
-            <input type="text" placeholder="Phonetic & Meaning" value={wordMeaning} onChange={(e) => setWordMeaning(e.target.value)} className="w-full px-4 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-sm focus:bg-white/80 dark:focus:bg-[#1C1C1E]/80 backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all outline-none" />
-            <textarea placeholder="Example sentence..." value={wordExample} onChange={(e) => setWordExample(e.target.value)} rows={4} className="w-full px-4 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-sm focus:bg-white/80 dark:focus:bg-[#1C1C1E]/80 backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all resize-none outline-none" />
+      {/* 表单区域 */}
+      <div className="space-y-4">
+        {isWordMode ? (
+          // 单词模式 UI
+          <div className="space-y-4 p-5 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+            <input 
+              type="text" 
+              placeholder="Word (e.g. Ubiquitous)" 
+              value={wordData.word}
+              onChange={(e) => setWordData({...wordData, word: e.target.value})}
+              className="w-full bg-white dark:bg-[#1C1C1E] px-4 py-3 rounded-xl border border-black/5 dark:border-white/5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold text-lg"
+            />
+            <input 
+              type="text" 
+              placeholder="Definition (无处不在的)" 
+              value={wordData.definition}
+              onChange={(e) => setWordData({...wordData, definition: e.target.value})}
+              className="w-full bg-white dark:bg-[#1C1C1E] px-4 py-3 rounded-xl border border-black/5 dark:border-white/5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
+            />
+            <textarea 
+              placeholder="Example sentence..." 
+              value={wordData.example}
+              onChange={(e) => setWordData({...wordData, example: e.target.value})}
+              rows={3}
+              className="w-full bg-white dark:bg-[#1C1C1E] px-4 py-3 rounded-xl border border-black/5 dark:border-white/5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none text-sm"
+            />
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="flex space-x-3">
-              <input type="text" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} className="flex-1 px-4 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-base font-semibold focus:bg-white/80 dark:focus:bg-[#1C1C1E]/80 backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all outline-none" />
-              <select value={category} onChange={(e) => setCategory(e.target.value as AppCategory)} className="w-1/3 px-3 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500/50 backdrop-blur-md transition-all outline-none">
-                <option value="learning">Knowledge</option>
-                <option value="work">Operations</option>
-                <option value="life">Biometrics</option>
-                <option value="entertainment">Simulations</option>
-              </select>
-            </div>
-            
-            <div className="relative">
-              <textarea placeholder="Write something messy... let AI format it for you." value={content} onChange={(e) => setContent(e.target.value)} rows={8} className="w-full px-4 py-3 bg-black/[0.03] dark:bg-white/[0.03] border border-white/20 dark:border-white/5 rounded-xl text-sm focus:bg-white/80 dark:focus:bg-[#1C1C1E]/80 backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all resize-none outline-none pb-12" />
-              
-              {/* ✨ AI 润色魔法按钮 */}
-              <button 
-                type="button" 
-                onClick={handleAIPolish} 
-                disabled={isPolishing || !content.trim()} 
-                className="absolute bottom-3 right-3 text-xs flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-medium transition-all bg-gradient-to-r from-purple-500/10 to-blue-500/10 text-purple-600 dark:text-purple-400 hover:from-purple-500/20 hover:to-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed border border-purple-500/10"
-              >
-                <span>{isPolishing ? '✨ Polishing...' : '✨ AI Polish'}</span>
-              </button>
-            </div>
-          </div>
+          // 标准模式 UI
+          <>
+            <input 
+              type="text" 
+              placeholder="Block Title..." 
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full bg-transparent text-xl font-semibold placeholder:text-gray-400 border-none outline-none px-2 py-2"
+            />
+            <textarea 
+              placeholder="Start typing your data..." 
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={12}
+              className="w-full bg-black/[0.02] dark:bg-white/[0.02] p-4 rounded-2xl border border-black/5 dark:border-white/5 outline-none focus:bg-white dark:focus:bg-[#1C1C1E] focus:ring-1 focus:ring-gray-400 transition-all resize-none font-mono text-sm leading-relaxed"
+            />
+          </>
         )}
 
-        <button type="submit" disabled={isSubmitting} className="w-full py-3.5 bg-blue-600/90 hover:bg-blue-600 backdrop-blur-md text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50">
-          {isSubmitting ? 'Syncing...' : 'Commit Block'}
+        {/* 提交按钮 */}
+        <button 
+          onClick={handleSubmit}
+          disabled={isSubmitting}
+          className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-xl font-medium shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+        >
+          {isSubmitting ? 'Commiting...' : (editingId ? 'Update Block' : 'Commit to OS')}
         </button>
-      </form>
+      </div>
     </div>
   );
 }
