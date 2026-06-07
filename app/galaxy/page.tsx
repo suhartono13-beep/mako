@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 
 type AppCategory = 'learning' | 'work' | 'life' | 'entertainment';
+type LinkType = 'normal' | 'derive' | 'support' | 'conflict';
 
 interface Note {
   id: number;
@@ -16,12 +17,17 @@ interface Note {
   inserted_at: string;
 }
 
+interface SemanticLink {
+  targetId: number;
+  type: LinkType;
+}
+
 interface PlanetNode {
   note: Note;
   cleanTitle: string;
-  linkedNodeIds: number[];    // 主动引用了哪些星球 (Out-Degree)
-  linkedByNodeIds: number[];  // 被哪些星球引用了 (In-Degree)
-  currentAlpha: number;       // 🚀 新增：用于暗场平滑过渡的透明度
+  links: SemanticLink[];
+  linkedByNodeIds: number[];
+  currentAlpha: number;       
   x: number;
   y: number;
   targetX: number;
@@ -44,7 +50,6 @@ export default function InteractiveGalaxy() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<PlanetNode[]>([]);
   
-  // 🎥 相机系统、交互状态与黑洞引力场
   const cameraRef = useRef({ x: 0, y: 0, scale: 1 });
   const isDraggingCameraRef = useRef(false);
   const draggedNodeRef = useRef<PlanetNode | null>(null);
@@ -53,7 +58,6 @@ export default function InteractiveGalaxy() {
   const mouseRef = useRef({ x: -1000, y: -1000, hoveredNode: null as PlanetNode | null });
   const hasMovedRef = useRef(false);
   
-  // 🚀 新增：同步 React 状态到 Canvas 渲染循环的 Ref
   const selectedNodeIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -88,7 +92,6 @@ export default function InteractiveGalaxy() {
       entertainment: { x: baseWidth * 0.7, y: baseHeight * 0.8, color: '#F97316', glow: 'rgba(249, 115, 22, 0.4)' },
     };
 
-    // 第一遍：初始化基础节点
     const nodes: PlanetNode[] = rawNotes.map((note, index) => {
       const center = centers[note.category] || { x: baseWidth / 2, y: baseHeight / 2, color: '#3B82F6', glow: 'rgba(59, 130, 246, 0.4)' };
       const orbitRadius = 60 + (index % 8) * 40 + Math.random() * 30;
@@ -98,14 +101,14 @@ export default function InteractiveGalaxy() {
       return {
         note,
         cleanTitle,
-        linkedNodeIds: [],
+        links: [],
         linkedByNodeIds: [],
-        currentAlpha: 1.0, // 初始完全可见
+        currentAlpha: 1.0, 
         x: center.x + Math.cos(angle) * orbitRadius,
         y: center.y + Math.sin(angle) * orbitRadius,
         targetX: center.x,
         targetY: center.y,
-        radius: 6, // 默认基础大小
+        radius: 6, 
         color: center.color,
         glowColor: center.glow,
         angle,
@@ -116,24 +119,38 @@ export default function InteractiveGalaxy() {
       };
     });
 
-    // 第二遍：建立双向连接网络 (嗅探内容)
+    // 🚀 智能语义网络嗅探 (NLP-like Markdown Scanner)
     nodes.forEach(node => {
       nodes.forEach(targetNode => {
-        if (node.note.id !== targetNode.note.id) {
-          if (targetNode.cleanTitle.length > 1 && node.note.content.includes(targetNode.cleanTitle)) {
-            if (!node.linkedNodeIds.includes(targetNode.note.id)) {
-              node.linkedNodeIds.push(targetNode.note.id);
-              targetNode.linkedByNodeIds.push(node.note.id); // 记录反向被引用
-            }
+        if (node.note.id === targetNode.note.id || targetNode.cleanTitle.length <= 1) return;
+
+        const content = node.note.content;
+        const titleEscaped = targetNode.cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // 构建复杂的上下文语义嗅探正则
+        const deriveRegex = new RegExp(`(->|递进|衍生|演化)\\s*.*?${titleEscaped}`, 'i');
+        const supportRegex = new RegExp(`(\\+|支持|证实|协同)\\s*.*?${titleEscaped}`, 'i');
+        const conflictRegex = new RegExp(`(-|冲突|反对|反思)\\s*.*?${titleEscaped}`, 'i');
+
+        if (content.includes(targetNode.cleanTitle)) {
+          let type: LinkType = 'normal';
+          
+          if (conflictRegex.test(content)) type = 'conflict';
+          else if (supportRegex.test(content)) type = 'support';
+          else if (deriveRegex.test(content)) type = 'derive';
+
+          // 避免重复建立相同目标的链路
+          if (!node.links.some(l => l.targetId === targetNode.note.id)) {
+            node.links.push({ targetId: targetNode.note.id, type });
+            targetNode.linkedByNodeIds.push(node.note.id);
           }
         }
       });
     });
 
-    // 第三遍：🚀 计算质量跃迁 (Node Mass)
+    // 计算质量跃迁 (Node Mass)
     nodes.forEach(node => {
-      const totalConnections = node.linkedNodeIds.length + node.linkedByNodeIds.length;
-      // 核心枢纽节点变大，边缘碎片较小
+      const totalConnections = node.links.length + node.linkedByNodeIds.length;
       node.radius = 5 + (totalConnections * 2.5); 
     });
 
@@ -176,7 +193,6 @@ export default function InteractiveGalaxy() {
       frameCount++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 1. 视差星空背景
       bgStars.forEach(s => {
         s.alpha += s.speed;
         if (s.alpha > 1 || s.alpha < 0.1) s.speed = -s.speed;
@@ -184,8 +200,7 @@ export default function InteractiveGalaxy() {
         ctx.fillRect(s.x, s.y, s.size, s.size);
       });
 
-      // 🎥 开启相机矩阵层
-      ctx.save();
+      ctx.save(); // 保存绝对屏幕坐标系
       const { x: camX, y: camY, scale: camScale } = cameraRef.current;
       ctx.translate(camX, camY);
       ctx.scale(camScale, camScale);
@@ -195,7 +210,6 @@ export default function InteractiveGalaxy() {
       const mouseWorldX = (mouseRef.current.x - camX) / camScale;
       const mouseWorldY = (mouseRef.current.y - camY) / camScale;
 
-      // 更新坐标 & 寻找悬停点
       nodes.forEach(node => {
         node.pulse += node.pulseSpeed;
         
@@ -217,7 +231,6 @@ export default function InteractiveGalaxy() {
         }
       });
 
-      // 🚀 星座模式聚焦逻辑 (Constellation Focus)
       let focusNode: PlanetNode | null = null;
       if (draggedNodeRef.current) focusNode = draggedNodeRef.current;
       else if (currentHovered) focusNode = currentHovered;
@@ -225,21 +238,19 @@ export default function InteractiveGalaxy() {
         focusNode = nodes.find(n => n.note.id === selectedNodeIdRef.current) || null;
       }
 
-      // 构建可视焦点网络集合
       const activeNetworkIds = new Set<number>();
       if (focusNode) {
         activeNetworkIds.add(focusNode.note.id);
-        focusNode.linkedNodeIds.forEach(id => activeNetworkIds.add(id));
+        focusNode.links.forEach(l => activeNetworkIds.add(l.targetId));
         focusNode.linkedByNodeIds.forEach(id => activeNetworkIds.add(id));
       }
 
-      // 平滑计算每个星球的透明度 (Alpha 插值)
       nodes.forEach(node => {
-        const targetAlpha = focusNode ? (activeNetworkIds.has(node.note.id) ? 1.0 : 0.1) : 1.0;
-        node.currentAlpha += (targetAlpha - node.currentAlpha) * 0.1; // 缓动阻尼插值
+        const targetAlpha = focusNode ? (activeNetworkIds.has(node.note.id) ? 1.0 : 0.08) : 1.0;
+        node.currentAlpha += (targetAlpha - node.currentAlpha) * 0.1; 
       });
 
-      // 2. 绘制普通星系拓扑连线 (受 Alpha 影响)
+      // 1. 绘制底层静态背景拓扑
       ctx.lineWidth = 0.5 / camScale;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
@@ -249,47 +260,72 @@ export default function InteractiveGalaxy() {
               ctx.beginPath();
               ctx.moveTo(nodes[i].x, nodes[i].y);
               ctx.lineTo(nodes[j].x, nodes[j].y);
-              // 基于距离衰减，并且结合连接两端的星体当前透明度
-              const baseAlpha = (1 - dist / 220) * 0.1;
-              const jointAlpha = baseAlpha * Math.min(nodes[i].currentAlpha, nodes[j].currentAlpha);
-              ctx.strokeStyle = `rgba(255, 255, 255, ${jointAlpha})`;
+              const baseAlpha = (1 - dist / 220) * 0.08;
+              ctx.strokeStyle = `rgba(255, 255, 255, ${baseAlpha * Math.min(nodes[i].currentAlpha, nodes[j].currentAlpha)})`;
               ctx.stroke();
             }
           }
         }
       }
 
-      // 3. 🕸️ 绘制双向链接高能激光束
-      ctx.lineWidth = 2 / camScale;
+      // 2. 绘制多模式语义链路与高能脉冲粒子 (Pulse Flows)
       nodes.forEach(node => {
-        node.linkedNodeIds.forEach(targetId => {
-          const targetNode = nodes.find(n => n.note.id === targetId);
-          if (targetNode) {
-            ctx.beginPath();
-            ctx.moveTo(node.x, node.y);
-            ctx.lineTo(targetNode.x, targetNode.y);
+        node.links.forEach(link => {
+          const targetNode = nodes.find(n => n.note.id === link.targetId);
+          if (!targetNode) return;
 
-            const isHighlight = focusNode?.note.id === node.note.id || focusNode?.note.id === targetNode.note.id;
+          const isHighlight = focusNode?.note.id === node.note.id || focusNode?.note.id === targetNode.note.id;
+          const jointAlpha = Math.min(node.currentAlpha, targetNode.currentAlpha);
+          const baseAlpha = isHighlight ? 0.8 : 0.25 * jointAlpha;
+
+          let linkColor = `rgba(139, 92, 246, ${baseAlpha})`;       // normal: 紫色
+          let particleColor = '#D946EF';
+          if (link.type === 'derive') {
+            linkColor = `rgba(236, 72, 153, ${baseAlpha})`;       // derive: 玫红
+            particleColor = '#F472B6';
+          } else if (link.type === 'support') {
+            linkColor = `rgba(16, 185, 129, ${baseAlpha})`;      // support: 翡翠绿
+            particleColor = '#34D399';
+          } else if (link.type === 'conflict') {
+            const flash = 0.4 + Math.sin(frameCount * 0.2) * 0.3;
+            linkColor = `rgba(239, 68, 68, ${isHighlight ? flash : flash * jointAlpha})`; // conflict: 警告红
+            particleColor = '#FCA5A5';
+          }
+
+          ctx.beginPath();
+          ctx.moveTo(node.x, node.y);
+          ctx.lineTo(targetNode.x, targetNode.y);
+          ctx.strokeStyle = linkColor;
+          ctx.lineWidth = (link.type !== 'normal' && isHighlight ? 2 : 1) / camScale;
+          if (link.type === 'conflict') ctx.setLineDash([4 / camScale, 4 / camScale]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          if (baseAlpha > 0.05) {
+            const particleCount = link.type === 'normal' ? 1 : 2;
+            const distance = Math.hypot(targetNode.x - node.x, targetNode.y - node.y);
             
-            const grad = ctx.createLinearGradient(node.x, node.y, targetNode.x, targetNode.y);
-            // 降低非聚焦状态下的连接线透明度
-            const jointAlpha = Math.min(node.currentAlpha, targetNode.currentAlpha);
-            const baseAlpha = isHighlight ? 0.9 : (0.4 * jointAlpha);
-            
-            grad.addColorStop(0, `rgba(236, 72, 153, ${baseAlpha})`);
-            grad.addColorStop(1, `rgba(139, 92, 246, ${baseAlpha})`);
-            
-            ctx.strokeStyle = grad;
-            ctx.setLineDash([8 / camScale, 8 / camScale]);
-            ctx.lineDashOffset = -frameCount * (isHighlight ? 1.5 : 0.5) / camScale;
-            ctx.stroke();
-            
-            ctx.setLineDash([]);
+            for (let p = 0; p < particleCount; p++) {
+              const speedModifier = link.type === 'derive' ? 1.5 : link.type === 'conflict' ? 2.2 : 1.0;
+              const progress = ((frameCount * 0.005 * speedModifier) + (p / particleCount)) % 1;
+              
+              const pX = node.x + (targetNode.x - node.x) * progress;
+              const pY = node.y + (targetNode.y - node.y) * progress;
+
+              ctx.beginPath();
+              ctx.arc(pX, pY, (isHighlight ? 3.5 : 2) / camScale, 0, Math.PI * 2);
+              ctx.fillStyle = particleColor;
+              
+              ctx.shadowColor = particleColor;
+              ctx.shadowBlur = 8;
+              ctx.fill();
+              ctx.shadowBlur = 0; 
+            }
           }
         });
       });
 
-      // 4. 渲染物理星球核心 (受自身 currentAlpha 影响)
+      // 3. 渲染物理星球核心
       nodes.forEach(node => {
         let currentRadius = node.radius + Math.sin(node.pulse) * 1.5;
         const isHovered = focusNode?.note.id === node.note.id;
@@ -309,15 +345,16 @@ export default function InteractiveGalaxy() {
         ctx.lineWidth = 2 / camScale;
         ctx.stroke();
         
-        ctx.globalAlpha = 1.0; // 恢复全透明度，防止影响其他绘制
+        ctx.globalAlpha = 1.0; 
       });
 
-      // 🎥 关闭相机矩阵层
+      // 🚨 关键修复点：在这里提前释放世界坐标系矩阵！
+      // 保证后续的黑洞和 HUD 渲染在固定的屏幕绝对坐标上
       ctx.restore();
 
-      // 5. 🕳️ 渲染 HUD 视界层：黑洞系统
-      const bhX = canvas.width - 100;
-      const bhY = canvas.height - 100;
+      // 4. 黑洞引力场 (基于屏幕绝对坐标)
+      const bhX = canvas.width - 180; // 从 100 增加到 180
+      const bhY = canvas.height - 180; // 从 100 增加到 180
       const bhBaseRadius = 30;
       
       const distToBlackHole = Math.hypot(mouseRef.current.x - bhX, mouseRef.current.y - bhY);
@@ -345,17 +382,18 @@ export default function InteractiveGalaxy() {
       ctx.stroke();
       ctx.restore();
 
-      // 6. 全息 HUD 文字与指针交互
+      // 5. HUD 文本渲染 (也是基于屏幕绝对坐标)
       mouseRef.current.hoveredNode = currentHovered;
       if (currentHovered && !isDraggingCameraRef.current) {
         const n = currentHovered as PlanetNode;
         canvas.style.cursor = draggedNodeRef.current ? 'grabbing' : 'pointer';
 
+        // 动态计算世界坐标到屏幕坐标的映射，保证跟随行星
         const screenX = n.x * camScale + camX;
         const screenY = n.y * camScale + camY;
         const screenRadius = n.radius * camScale;
 
-        const totalLinks = n.linkedNodeIds.length + n.linkedByNodeIds.length;
+        const totalLinks = n.links.length + n.linkedByNodeIds.length;
         const hudText = isBlackHoleHovered 
           ? `⚠️ DELETING: ${n.cleanTitle}`
           : (totalLinks > 0 ? `${n.cleanTitle} [🔗 ${totalLinks}]` : n.cleanTitle);
@@ -395,10 +433,10 @@ export default function InteractiveGalaxy() {
         canvas.style.cursor = isDraggingCameraRef.current ? 'grabbing' : 'grab';
       }
 
+      // 注意这里没有 ctx.restore() 了
       animationFrameId = requestAnimationFrame(render);
     };
 
-    // 鼠标事件处理器
     const handleMouseDown = (e: MouseEvent) => {
       hasMovedRef.current = false;
       dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -432,6 +470,7 @@ export default function InteractiveGalaxy() {
       if (draggedNodeRef.current) {
         const bhX = canvas.width - 100;
         const bhY = canvas.height - 100;
+        // 黑洞引力判定区
         const distToBh = Math.hypot(mouseRef.current.x - bhX, mouseRef.current.y - bhY);
         
         if (distToBh < 80) {
@@ -447,7 +486,6 @@ export default function InteractiveGalaxy() {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-
       const zoomIntensity = 0.001;
       const delta = -e.deltaY * zoomIntensity;
       
@@ -515,8 +553,8 @@ export default function InteractiveGalaxy() {
         </h1>
         <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase flex items-center space-x-2">
           <span>Viewport Active</span>
-          <span className="w-1 h-1 bg-pink-500 rounded-full animate-pulse ml-2" />
-          <span className="text-pink-500">Neural Links Online</span>
+          <span className="w-1 h-1 bg-purple-500 rounded-full animate-pulse ml-2" />
+          <span className="text-purple-500">Semantic Links Streaming</span>
         </p>
       </div>
 
@@ -527,14 +565,21 @@ export default function InteractiveGalaxy() {
         <div className="flex items-center space-x-2 text-orange-400"><span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"/> <span>🎮 Simulation ({notes.filter(n=>n.category==='entertainment').length})</span></div>
       </div>
 
+      {/* 语义连线图例 HUD */}
+      <div className="absolute bottom-6 right-6 flex flex-col space-y-1.5 text-[10px] font-mono border border-white/5 bg-black/40 backdrop-blur-md p-3 rounded-xl z-50 pointer-events-none">
+        <div className="text-gray-500 mb-0.5 uppercase tracking-wider">Flow Spectrum</div>
+        <div className="flex items-center space-x-2 text-pink-400"><div className="w-4 h-0.5 bg-pink-500"/> <span>➔ DERIVE (递进)</span></div>
+        <div className="flex items-center space-x-2 text-emerald-400"><div className="w-4 h-0.5 bg-emerald-500"/> <span>➔ SUPPORT (证实)</span></div>
+        <div className="flex items-center space-x-2 text-red-400"><div className="w-4.5 h-0.5 border-t border-dashed border-red-500"/> <span>⤳ CONFLICT (反思)</span></div>
+      </div>
+
       {loading && (
         <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/80 space-y-3 z-50 pointer-events-none">
-          <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-400 rounded-full animate-spin" />
-          <span className="text-xs font-mono text-blue-400 tracking-widest animate-pulse">GENERATING GRAVITATIONAL MAP...</span>
+          <div className="w-8 h-8 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
+          <span className="text-xs font-mono text-purple-400 tracking-widest animate-pulse">STREAMING NEURAL FLOWS...</span>
         </div>
       )}
 
-      {/* 🛸 详情弹窗 */}
       {selectedNote && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in pointer-events-auto" onClick={() => setSelectedNote(null)}>
           <div className="w-full max-w-lg bg-[#121215]/95 border border-white/10 rounded-3xl p-6 shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
