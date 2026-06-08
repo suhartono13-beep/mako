@@ -124,17 +124,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <span className="text-base font-semibold tracking-tight">Mako Space</span>
                   </Link>
                   
-                  <div className="flex items-center space-x-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center space-x-5 text-sm font-medium text-gray-500 dark:text-gray-400">
                     <Link href="/" className="hover:text-black dark:hover:text-white transition-colors hidden md:block">Dashboard</Link>
                     <Link href="/terminal" className="hover:text-black dark:hover:text-white transition-colors hidden md:block">Terminal</Link>
-                    <Link href="/galaxy" className="text-blue-500 dark:text-blue-400 font-semibold hover:text-blue-600 transition-colors">🌌 Galaxy</Link>
+                    <Link href="/galaxy" className="text-blue-500 dark:text-blue-400 font-semibold hover:text-blue-600 transition-colors pr-2">🌌 Galaxy</Link>
                     
-                    <div className="h-4 w-[1px] bg-gray-300 dark:bg-gray-700 hidden md:block" />
+                    {/* 🚀 新增：全局系统内核入口，悬浮于整个操作系统的右上角 */}
+                    <Link 
+                      href="/system" 
+                      className="text-xs font-mono font-bold bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 px-3 py-1.5 rounded-full hover:scale-105 transition-all shadow-sm flex items-center space-x-1"
+                    >
+                      <span>🤖</span>
+                      <span className="hidden md:inline">KERNEL</span>
+                    </Link>
+
+                    <div className="h-4 w-[1px] bg-gray-300 dark:bg-gray-700 hidden md:block ml-2" />
                     
                     {/* 融合后的丝滑主题切换组件 */}
                     <NavbarThemeToggle />
 
-                    <button onClick={handleLogout} className="text-xs font-semibold bg-gray-200/50 hover:bg-gray-200 dark:bg-gray-800/50 dark:hover:bg-gray-800 text-gray-900 dark:text-white px-4 py-1.5 rounded-full transition-colors">
+                    <button onClick={handleLogout} className="text-xs font-semibold bg-gray-200/50 hover:bg-gray-200 dark:bg-gray-800/50 dark:hover:bg-gray-800 text-gray-900 dark:text-white px-4 py-1.5 rounded-full transition-colors ml-2">
                       Log Out
                     </button>
                   </div>
