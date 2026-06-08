@@ -47,10 +47,20 @@ export default function InteractiveGalaxy() {
   const [loading, setLoading] = useState(true);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   
+  // 🌟 新增功能 A：创世表单状态
+  const [createForm, setCreateForm] = useState<{ x: number, y: number, worldX: number, worldY: number } | null>(null);
+  const [newNoteData, setNewNoteData] = useState({ title: '', content: '', category: 'learning' as AppCategory });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 🌟 新增功能 B：雷达搜索状态
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<PlanetNode[]>([]);
   
   const cameraRef = useRef({ x: 0, y: 0, scale: 1 });
+  // 用于平滑推进的镜头目标
+  const cameraTargetRef = useRef<{ x: number, y: number, scale: number } | null>(null);
   const isDraggingCameraRef = useRef(false);
   const draggedNodeRef = useRef<PlanetNode | null>(null);
   const dragStartRef = useRef({ x: 0, y: 0 });
@@ -92,11 +102,20 @@ export default function InteractiveGalaxy() {
       entertainment: { x: baseWidth * 0.7, y: baseHeight * 0.8, color: '#F97316', glow: 'rgba(249, 115, 22, 0.4)' },
     };
 
+    const oldNodes = nodesRef.current;
+
     const nodes: PlanetNode[] = rawNotes.map((note, index) => {
+      // ✅ 状态保留：如果在原星系中已存在，保留它的物理坐标，防止乱跳
+      const oldNode = oldNodes.find(n => n.note.id === note.id);
+      const cleanTitle = note.title.replace('🔤 ', '').replace('[Word] ', '').trim();
+
+      if (oldNode) {
+        return { ...oldNode, note, cleanTitle, links: [], linkedByNodeIds: [] };
+      }
+
       const center = centers[note.category] || { x: baseWidth / 2, y: baseHeight / 2, color: '#3B82F6', glow: 'rgba(59, 130, 246, 0.4)' };
       const orbitRadius = 60 + (index % 8) * 40 + Math.random() * 30;
       const angle = Math.random() * Math.PI * 2;
-      const cleanTitle = note.title.replace('🔤 ', '').replace('[Word] ', '').trim();
 
       return {
         note,
@@ -119,27 +138,22 @@ export default function InteractiveGalaxy() {
       };
     });
 
-    // 🚀 智能语义网络嗅探 (NLP-like Markdown Scanner)
     nodes.forEach(node => {
       nodes.forEach(targetNode => {
         if (node.note.id === targetNode.note.id || targetNode.cleanTitle.length <= 1) return;
-
         const content = node.note.content;
         const titleEscaped = targetNode.cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-        // 构建复杂的上下文语义嗅探正则
         const deriveRegex = new RegExp(`(->|递进|衍生|演化)\\s*.*?${titleEscaped}`, 'i');
         const supportRegex = new RegExp(`(\\+|支持|证实|协同)\\s*.*?${titleEscaped}`, 'i');
         const conflictRegex = new RegExp(`(-|冲突|反对|反思)\\s*.*?${titleEscaped}`, 'i');
 
         if (content.includes(targetNode.cleanTitle)) {
           let type: LinkType = 'normal';
-          
           if (conflictRegex.test(content)) type = 'conflict';
           else if (supportRegex.test(content)) type = 'support';
           else if (deriveRegex.test(content)) type = 'derive';
 
-          // 避免重复建立相同目标的链路
           if (!node.links.some(l => l.targetId === targetNode.note.id)) {
             node.links.push({ targetId: targetNode.note.id, type });
             targetNode.linkedByNodeIds.push(node.note.id);
@@ -148,7 +162,6 @@ export default function InteractiveGalaxy() {
       });
     });
 
-    // 计算质量跃迁 (Node Mass)
     nodes.forEach(node => {
       const totalConnections = node.links.length + node.linkedByNodeIds.length;
       node.radius = 5 + (totalConnections * 2.5); 
@@ -156,7 +169,7 @@ export default function InteractiveGalaxy() {
 
     nodesRef.current = nodes;
 
-    if (cameraRef.current.x === 0 && cameraRef.current.y === 0) {
+    if (cameraRef.current.x === 0 && cameraRef.current.y === 0 && oldNodes.length === 0) {
       cameraRef.current = { x: 0, y: 0, scale: 0.8 };
       centerCamera();
     }
@@ -165,6 +178,52 @@ export default function InteractiveGalaxy() {
   const centerCamera = () => {
     cameraRef.current.x = window.innerWidth / 2 * (1 - cameraRef.current.scale);
     cameraRef.current.y = window.innerHeight / 2 * (1 - cameraRef.current.scale);
+  };
+
+  // 🎯 功能 B：触发雷达平移运镜
+  const focusOnNode = (id: number) => {
+    const node = nodesRef.current.find(n => n.note.id === id);
+    if (!node) return;
+    
+    const targetScale = 1.5; // 放大系数
+    const targetX = window.innerWidth / 2 - node.x * targetScale;
+    const targetY = window.innerHeight / 2 - node.y * targetScale;
+    
+    cameraTargetRef.current = { x: targetX, y: targetY, scale: targetScale };
+    setSearchQuery(''); // 选中后清空搜索
+  };
+
+  // 📝 功能 A：提交新星球
+  const handleCreateSubmit = async () => {
+    if (!newNoteData.title || !newNoteData.content) {
+      toast.error('Title and core data cannot be void');
+      return;
+    }
+    setIsSubmitting(true);
+    
+    const { data, error } = await supabase.from('notes').insert([
+      { title: newNoteData.title, content: newNoteData.content, category: newNoteData.category }
+    ]).select().single();
+
+    if (error || !data) {
+      toast.error('Failed to ignite star');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 预埋物理坐标，让星系刷新时星球直接出现在双击的位置
+    const tempNode = { ...data, cleanTitle: data.title } as any;
+    nodesRef.current.push({
+      note: data as Note, cleanTitle: data.title, links: [], linkedByNodeIds: [], currentAlpha: 1,
+      x: createForm!.worldX, y: createForm!.worldY, targetX: createForm!.worldX, targetY: createForm!.worldY,
+      radius: 5, color: '#ffffff', glowColor: '#ffffff', angle: 0, orbitRadius: 0, orbitSpeed: 0, pulse: 0, pulseSpeed: 0
+    });
+
+    setNotes([data as Note, ...notes]);
+    setCreateForm(null);
+    setNewNoteData({ title: '', content: '', category: 'learning' });
+    toast.success('Star ignited successfully');
+    setIsSubmitting(false);
   };
 
   useEffect(() => {
@@ -193,6 +252,18 @@ export default function InteractiveGalaxy() {
       frameCount++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // 🎥 镜头平滑插值 (Camera Smoothing Interpolation)
+      if (cameraTargetRef.current && !isDraggingCameraRef.current) {
+        cameraRef.current.x += (cameraTargetRef.current.x - cameraRef.current.x) * 0.08;
+        cameraRef.current.y += (cameraTargetRef.current.y - cameraRef.current.y) * 0.08;
+        cameraRef.current.scale += (cameraTargetRef.current.scale - cameraRef.current.scale) * 0.08;
+        
+        const dx = Math.abs(cameraTargetRef.current.x - cameraRef.current.x);
+        const dy = Math.abs(cameraTargetRef.current.y - cameraRef.current.y);
+        const ds = Math.abs(cameraTargetRef.current.scale - cameraRef.current.scale);
+        if (dx < 0.5 && dy < 0.5 && ds < 0.01) cameraTargetRef.current = null; // 到达目标
+      }
+
       bgStars.forEach(s => {
         s.alpha += s.speed;
         if (s.alpha > 1 || s.alpha < 0.1) s.speed = -s.speed;
@@ -200,7 +271,7 @@ export default function InteractiveGalaxy() {
         ctx.fillRect(s.x, s.y, s.size, s.size);
       });
 
-      ctx.save(); // 保存绝对屏幕坐标系
+      ctx.save();
       const { x: camX, y: camY, scale: camScale } = cameraRef.current;
       ctx.translate(camX, camY);
       ctx.scale(camScale, camScale);
@@ -218,9 +289,12 @@ export default function InteractiveGalaxy() {
           node.y = mouseWorldY;
           currentHovered = node;
         } else {
-          node.angle += node.orbitSpeed;
-          node.x = node.targetX + Math.cos(node.angle) * node.orbitRadius;
-          node.y = node.targetY + Math.sin(node.angle) * node.orbitRadius;
+          // 如果正在被创建，先固定在原位
+          if (node.orbitSpeed !== 0) {
+            node.angle += node.orbitSpeed;
+            node.x = node.targetX + Math.cos(node.angle) * node.orbitRadius;
+            node.y = node.targetY + Math.sin(node.angle) * node.orbitRadius;
+          }
         }
 
         const distToMouse = Math.hypot(node.x - mouseWorldX, node.y - mouseWorldY);
@@ -245,12 +319,23 @@ export default function InteractiveGalaxy() {
         focusNode.linkedByNodeIds.forEach(id => activeNetworkIds.add(id));
       }
 
+      const sq = searchQuery.toLowerCase();
+
       nodes.forEach(node => {
-        const targetAlpha = focusNode ? (activeNetworkIds.has(node.note.id) ? 1.0 : 0.08) : 1.0;
+        let targetAlpha = 1.0;
+        
+        // 🚨 雷达搜索模式 Alpha 判定
+        if (sq) {
+          const isMatch = node.note.title.toLowerCase().includes(sq) || node.note.content.toLowerCase().includes(sq);
+          targetAlpha = isMatch ? 1.0 : 0.05; // 不匹配的进入暗物质状态
+        } else if (focusNode) {
+          targetAlpha = activeNetworkIds.has(node.note.id) ? 1.0 : 0.08;
+        }
+
         node.currentAlpha += (targetAlpha - node.currentAlpha) * 0.1; 
       });
 
-      // 1. 绘制底层静态背景拓扑
+      // 1. 底层连线
       ctx.lineWidth = 0.5 / camScale;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
@@ -268,8 +353,9 @@ export default function InteractiveGalaxy() {
         }
       }
 
-      // 2. 绘制多模式语义链路与高能脉冲粒子 (Pulse Flows)
+      // 2. 语义脉冲
       nodes.forEach(node => {
+        if (node.currentAlpha < 0.1 && !sq) return; // 优化性能
         node.links.forEach(link => {
           const targetNode = nodes.find(n => n.note.id === link.targetId);
           if (!targetNode) return;
@@ -278,17 +364,13 @@ export default function InteractiveGalaxy() {
           const jointAlpha = Math.min(node.currentAlpha, targetNode.currentAlpha);
           const baseAlpha = isHighlight ? 0.8 : 0.25 * jointAlpha;
 
-          let linkColor = `rgba(139, 92, 246, ${baseAlpha})`;       // normal: 紫色
+          let linkColor = `rgba(139, 92, 246, ${baseAlpha})`;
           let particleColor = '#D946EF';
-          if (link.type === 'derive') {
-            linkColor = `rgba(236, 72, 153, ${baseAlpha})`;       // derive: 玫红
-            particleColor = '#F472B6';
-          } else if (link.type === 'support') {
-            linkColor = `rgba(16, 185, 129, ${baseAlpha})`;      // support: 翡翠绿
-            particleColor = '#34D399';
-          } else if (link.type === 'conflict') {
+          if (link.type === 'derive') { linkColor = `rgba(236, 72, 153, ${baseAlpha})`; particleColor = '#F472B6'; }
+          else if (link.type === 'support') { linkColor = `rgba(16, 185, 129, ${baseAlpha})`; particleColor = '#34D399'; }
+          else if (link.type === 'conflict') {
             const flash = 0.4 + Math.sin(frameCount * 0.2) * 0.3;
-            linkColor = `rgba(239, 68, 68, ${isHighlight ? flash : flash * jointAlpha})`; // conflict: 警告红
+            linkColor = `rgba(239, 68, 68, ${isHighlight ? flash : flash * jointAlpha})`;
             particleColor = '#FCA5A5';
           }
 
@@ -302,44 +384,35 @@ export default function InteractiveGalaxy() {
           ctx.setLineDash([]);
 
           if (baseAlpha > 0.05) {
-            const particleCount = link.type === 'normal' ? 1 : 2;
-            const distance = Math.hypot(targetNode.x - node.x, targetNode.y - node.y);
-            
-            for (let p = 0; p < particleCount; p++) {
-              const speedModifier = link.type === 'derive' ? 1.5 : link.type === 'conflict' ? 2.2 : 1.0;
-              const progress = ((frameCount * 0.005 * speedModifier) + (p / particleCount)) % 1;
-              
-              const pX = node.x + (targetNode.x - node.x) * progress;
-              const pY = node.y + (targetNode.y - node.y) * progress;
-
-              ctx.beginPath();
-              ctx.arc(pX, pY, (isHighlight ? 3.5 : 2) / camScale, 0, Math.PI * 2);
-              ctx.fillStyle = particleColor;
-              
-              ctx.shadowColor = particleColor;
-              ctx.shadowBlur = 8;
-              ctx.fill();
-              ctx.shadowBlur = 0; 
-            }
+            const progress = ((frameCount * 0.005) % 1);
+            const pX = node.x + (targetNode.x - node.x) * progress;
+            const pY = node.y + (targetNode.y - node.y) * progress;
+            ctx.beginPath();
+            ctx.arc(pX, pY, (isHighlight ? 3.5 : 2) / camScale, 0, Math.PI * 2);
+            ctx.fillStyle = particleColor;
+            ctx.fill();
           }
         });
       });
 
-      // 3. 渲染物理星球核心
+      // 3. 星体渲染
       nodes.forEach(node => {
         let currentRadius = node.radius + Math.sin(node.pulse) * 1.5;
         const isHovered = focusNode?.note.id === node.note.id;
+        
+        // 雷达匹配高亮特效
+        const isRadarMatch = sq && (node.note.title.toLowerCase().includes(sq) || node.note.content.toLowerCase().includes(sq));
 
         ctx.globalAlpha = node.currentAlpha;
 
         ctx.beginPath();
-        ctx.arc(node.x, node.y, currentRadius * (isHovered ? 3 : 2), 0, Math.PI * 2);
-        ctx.fillStyle = isHovered ? node.glowColor.replace('0.4', '0.7') : node.glowColor;
+        ctx.arc(node.x, node.y, currentRadius * (isHovered || isRadarMatch ? 3 : 2), 0, Math.PI * 2);
+        ctx.fillStyle = isRadarMatch ? 'rgba(234, 179, 8, 0.6)' : (isHovered ? node.glowColor.replace('0.4', '0.7') : node.glowColor);
         ctx.fill();
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, currentRadius, 0, Math.PI * 2);
-        ctx.fillStyle = '#FFFFFF';
+        ctx.fillStyle = isRadarMatch ? '#FEF08A' : '#FFFFFF';
         ctx.fill();
         ctx.strokeStyle = node.color;
         ctx.lineWidth = 2 / camScale;
@@ -348,13 +421,11 @@ export default function InteractiveGalaxy() {
         ctx.globalAlpha = 1.0; 
       });
 
-      // 🚨 关键修复点：在这里提前释放世界坐标系矩阵！
-      // 保证后续的黑洞和 HUD 渲染在固定的屏幕绝对坐标上
       ctx.restore();
 
-      // 4. 黑洞引力场 (基于屏幕绝对坐标)
-      const bhX = canvas.width - 180; // 从 100 增加到 180
-      const bhY = canvas.height - 180; // 从 100 增加到 180
+      // 4. 黑洞 (修复位置)
+      const bhX = canvas.width - 180;
+      const bhY = canvas.height - 180;
       const bhBaseRadius = 30;
       
       const distToBlackHole = Math.hypot(mouseRef.current.x - bhX, mouseRef.current.y - bhY);
@@ -382,13 +453,12 @@ export default function InteractiveGalaxy() {
       ctx.stroke();
       ctx.restore();
 
-      // 5. HUD 文本渲染 (也是基于屏幕绝对坐标)
+      // 5. HUD 文本
       mouseRef.current.hoveredNode = currentHovered;
       if (currentHovered && !isDraggingCameraRef.current) {
         const n = currentHovered as PlanetNode;
         canvas.style.cursor = draggedNodeRef.current ? 'grabbing' : 'pointer';
 
-        // 动态计算世界坐标到屏幕坐标的映射，保证跟随行星
         const screenX = n.x * camScale + camX;
         const screenY = n.y * camScale + camY;
         const screenRadius = n.radius * camScale;
@@ -411,7 +481,6 @@ export default function InteractiveGalaxy() {
 
         ctx.fillStyle = isBlackHoleHovered ? 'rgba(69, 10, 10, 0.9)' : 'rgba(10, 10, 12, 0.9)';
         ctx.strokeStyle = isBlackHoleHovered ? '#EF4444' : n.color;
-        ctx.lineWidth = 1;
         
         const boxX = screenX + screenRadius + 15;
         const boxY = screenY - 30;
@@ -419,7 +488,6 @@ export default function InteractiveGalaxy() {
         ctx.beginPath();
         ctx.moveTo(screenX, screenY);
         ctx.lineTo(boxX, boxY + 13);
-        ctx.strokeStyle = isBlackHoleHovered ? '#EF4444' : n.color;
         ctx.stroke();
 
         ctx.beginPath();
@@ -433,11 +501,11 @@ export default function InteractiveGalaxy() {
         canvas.style.cursor = isDraggingCameraRef.current ? 'grabbing' : 'grab';
       }
 
-      // 注意这里没有 ctx.restore() 了
       animationFrameId = requestAnimationFrame(render);
     };
 
     const handleMouseDown = (e: MouseEvent) => {
+      if (createForm) return; // 如果正在创建，禁用拖拽
       hasMovedRef.current = false;
       dragStartRef.current = { x: e.clientX, y: e.clientY };
 
@@ -446,6 +514,7 @@ export default function InteractiveGalaxy() {
         return; 
       }
       isDraggingCameraRef.current = true;
+      cameraTargetRef.current = null; // 打断自动运镜
       lastCameraRef.current = { ...cameraRef.current };
     };
 
@@ -456,9 +525,7 @@ export default function InteractiveGalaxy() {
 
       const dx = e.clientX - dragStartRef.current.x;
       const dy = e.clientY - dragStartRef.current.y;
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        hasMovedRef.current = true;
-      }
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) hasMovedRef.current = true;
 
       if (isDraggingCameraRef.current) {
         cameraRef.current.x = lastCameraRef.current.x + dx;
@@ -468,12 +535,9 @@ export default function InteractiveGalaxy() {
 
     const handleMouseUp = () => {
       if (draggedNodeRef.current) {
-        const bhX = canvas.width - 100;
-        const bhY = canvas.height - 100;
-        // 黑洞引力判定区
-        const distToBh = Math.hypot(mouseRef.current.x - bhX, mouseRef.current.y - bhY);
-        
-        if (distToBh < 80) {
+        const bhX = canvas.width - 180;
+        const bhY = canvas.height - 180;
+        if (Math.hypot(mouseRef.current.x - bhX, mouseRef.current.y - bhY) < 80) {
           handleDelete(draggedNodeRef.current.note.id);
         }
         draggedNodeRef.current = null;
@@ -482,12 +546,14 @@ export default function InteractiveGalaxy() {
     };
 
     const handleWheel = (e: WheelEvent) => {
+      if (createForm) return;
       e.preventDefault();
+      cameraTargetRef.current = null; // 滚轮打断自动运镜
+      
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const zoomIntensity = 0.001;
-      const delta = -e.deltaY * zoomIntensity;
+      const delta = -e.deltaY * 0.001;
       
       let newScale = cameraRef.current.scale * Math.exp(delta);
       newScale = Math.max(0.15, Math.min(newScale, 3)); 
@@ -503,7 +569,22 @@ export default function InteractiveGalaxy() {
     const handleCanvasClick = () => {
       if (!isDraggingCameraRef.current && !hasMovedRef.current && mouseRef.current.hoveredNode) {
         setSelectedNote(mouseRef.current.hoveredNode.note);
+        setCreateForm(null); // 点击星球关闭创建表单
+      } else if (!hasMovedRef.current && !mouseRef.current.hoveredNode) {
+         setCreateForm(null); // 点击空白关闭表单
       }
+    };
+
+    // 🎯 新增：双击触发创世
+    const handleDoubleClick = (e: MouseEvent) => {
+      if (mouseRef.current.hoveredNode) return;
+      const rect = canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const worldX = (screenX - cameraRef.current.x) / cameraRef.current.scale;
+      const worldY = (screenY - cameraRef.current.y) / cameraRef.current.scale;
+      
+      setCreateForm({ x: screenX, y: screenY, worldX, worldY });
     };
 
     window.addEventListener('resize', resizeCanvas);
@@ -512,6 +593,7 @@ export default function InteractiveGalaxy() {
     window.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('dblclick', handleDoubleClick);
     
     resizeCanvas();
     render();
@@ -523,50 +605,125 @@ export default function InteractiveGalaxy() {
       window.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('wheel', handleWheel);
       canvas.removeEventListener('click', handleCanvasClick);
+      canvas.removeEventListener('dblclick', handleDoubleClick);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [notes]);
+  }, [notes, createForm, searchQuery]);
 
   const handleDelete = async (id: number) => {
     setNotes(prev => prev.filter(n => n.id !== id));
     nodesRef.current = nodesRef.current.filter(n => n.note.id !== id);
     setSelectedNote(null);
-    toast.success('Star core collapsed successfully into the singularity');
+    toast.success('Star core collapsed successfully');
 
     const { error } = await supabase.from('notes').delete().eq('id', id);
-    if (error) {
-      toast.error('Erase matrix failed');
-    }
+    if (error) toast.error('Erase matrix failed');
   };
 
+  const searchedNotes = searchQuery.length > 0 ? notes.filter(n => n.title.toLowerCase().includes(searchQuery.toLowerCase()) || n.content.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+
   return (
-    <div className="fixed inset-0 bg-[#070709] overflow-hidden select-none z-40">
+    <div className="fixed inset-0 bg-[#070709] overflow-hidden select-none z-40 font-mono">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block touch-none" />
 
-      {/* 控制台与状态面板 */}
-      <div className="absolute top-6 left-6 pointer-events-auto space-y-2 z-50">
-        <Link href="/" className="inline-flex items-center text-xs font-mono font-bold text-gray-400 hover:text-blue-400 transition-colors bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-md">
-          ← TERMINAL DASHBOARD
-        </Link>
-        <h1 className="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-500 font-mono">
-          MAKO OMNI-GALAXY
-        </h1>
-        <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase flex items-center space-x-2">
-          <span>Viewport Active</span>
-          <span className="w-1 h-1 bg-purple-500 rounded-full animate-pulse ml-2" />
-          <span className="text-purple-500">Semantic Links Streaming</span>
-        </p>
+      {/* 控制台与雷达搜索 */}
+      <div className="absolute top-24 left-6 pointer-events-auto flex items-center space-x-6 z-50">
+        <div className="space-y-2">
+          <Link href="/" className="inline-flex items-center text-xs font-bold text-gray-400 hover:text-blue-400 transition-colors bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-md">
+            ← TERMINAL
+          </Link>
+          <h1 className="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-500">MAKO OMNI-GALAXY</h1>
+          <p className="text-[10px] text-gray-500 tracking-widest uppercase flex items-center">
+            <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse mr-2" />
+            Double-Click Void to Create
+          </p>
+        </div>
+
+        {/* 📡 雷达搜索框 */}
+        <div className="relative w-64 pt-1">
+          <input
+            type="text"
+            placeholder="Radar Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-black/50 border border-white/10 text-white text-sm rounded-full px-4 py-2 focus:outline-none focus:border-yellow-500/50 backdrop-blur-md transition-all placeholder:text-gray-600"
+          />
+          {searchQuery && (
+            <div className="absolute top-full mt-2 w-full max-h-64 overflow-y-auto bg-black/90 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-2 scrollbar-thin">
+              {searchedNotes.length === 0 ? (
+                <div className="text-xs text-gray-500 p-2 text-center">No stars matched</div>
+              ) : (
+                searchedNotes.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => focusOnNode(n.id)}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white rounded-lg transition-colors truncate"
+                  >
+                    <span className="text-yellow-500 mr-2">⌖</span>{n.title.replace('🔤 ', '').replace('[Word] ', '')}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="absolute bottom-6 left-6 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] font-mono border border-white/5 bg-black/40 backdrop-blur-md p-4 rounded-xl z-50 pointer-events-none">
+      {/* 🚀 A：虚空创星表单层 */}
+      {createForm && (
+        <div 
+          className="absolute z-50 pointer-events-auto"
+          style={{ left: createForm.x, top: createForm.y, transform: 'translate(-50%, -50%)' }}
+          onClick={(e) => e.stopPropagation()} // 防止点击穿透触发关闭
+        >
+          <div className="w-64 bg-black/80 backdrop-blur-xl border border-white/20 rounded-2xl p-4 shadow-[0_0_40px_rgba(255,255,255,0.1)] relative animate-fade-in">
+             {/* 中心十字准星装饰 */}
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-white/30 text-xs">⌖</div>
+            
+            <input 
+              autoFocus
+              placeholder="Star Title..." 
+              value={newNoteData.title}
+              onChange={e => setNewNoteData({...newNoteData, title: e.target.value})}
+              className="w-full bg-transparent text-white font-bold text-sm border-b border-white/10 pb-1 mb-3 focus:outline-none focus:border-blue-500"
+            />
+            <textarea 
+              placeholder="Core Data (Markdown)..." 
+              value={newNoteData.content}
+              onChange={e => setNewNoteData({...newNoteData, content: e.target.value})}
+              className="w-full h-24 bg-white/5 rounded-lg text-gray-300 text-xs p-2 mb-3 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none scrollbar-thin"
+            />
+            <div className="flex space-x-2">
+              <select 
+                value={newNoteData.category}
+                onChange={e => setNewNoteData({...newNoteData, category: e.target.value as AppCategory})}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg text-[10px] text-gray-300 px-2 outline-none"
+              >
+                <option value="learning" className="bg-black text-emerald-400">Learning</option>
+                <option value="work" className="bg-black text-indigo-400">Work</option>
+                <option value="life" className="bg-black text-teal-400">Life</option>
+                <option value="entertainment" className="bg-black text-orange-400">Entertainment</option>
+              </select>
+              <button 
+                onClick={handleCreateSubmit}
+                disabled={isSubmitting}
+                className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+              >
+                IGNITE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 底部与右侧图例（保持原样） */}
+      <div className="absolute bottom-6 left-6 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] border border-white/5 bg-black/40 backdrop-blur-md p-4 rounded-xl z-50 pointer-events-none">
         <div className="flex items-center space-x-2 text-emerald-400"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"/> <span>🧠 Knowledge ({notes.filter(n=>n.category==='learning').length})</span></div>
         <div className="flex items-center space-x-2 text-indigo-400"><span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"/> <span>💼 Operation ({notes.filter(n=>n.category==='work').length})</span></div>
         <div className="flex items-center space-x-2 text-teal-400"><span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"/> <span>🌿 Biometrics ({notes.filter(n=>n.category==='life').length})</span></div>
         <div className="flex items-center space-x-2 text-orange-400"><span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"/> <span>🎮 Simulation ({notes.filter(n=>n.category==='entertainment').length})</span></div>
       </div>
 
-      {/* 语义连线图例 HUD */}
-      <div className="absolute bottom-6 right-6 flex flex-col space-y-1.5 text-[10px] font-mono border border-white/5 bg-black/40 backdrop-blur-md p-3 rounded-xl z-50 pointer-events-none">
+      <div className="absolute bottom-6 right-6 flex flex-col space-y-1.5 text-[10px] border border-white/5 bg-black/40 backdrop-blur-md p-3 rounded-xl z-50 pointer-events-none">
         <div className="text-gray-500 mb-0.5 uppercase tracking-wider">Flow Spectrum</div>
         <div className="flex items-center space-x-2 text-pink-400"><div className="w-4 h-0.5 bg-pink-500"/> <span>➔ DERIVE (递进)</span></div>
         <div className="flex items-center space-x-2 text-emerald-400"><div className="w-4 h-0.5 bg-emerald-500"/> <span>➔ SUPPORT (证实)</span></div>
@@ -576,7 +733,7 @@ export default function InteractiveGalaxy() {
       {loading && (
         <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/80 space-y-3 z-50 pointer-events-none">
           <div className="w-8 h-8 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
-          <span className="text-xs font-mono text-purple-400 tracking-widest animate-pulse">STREAMING NEURAL FLOWS...</span>
+          <span className="text-xs text-purple-400 tracking-widest animate-pulse">STREAMING NEURAL FLOWS...</span>
         </div>
       )}
 
@@ -600,7 +757,6 @@ export default function InteractiveGalaxy() {
             </div>
             <div className="flex items-center justify-between text-xs font-mono text-gray-500 pt-1">
               <span>🛰️ TELEMETRY: {new Date(selectedNote.inserted_at).toLocaleDateString()}</span>
-              <button onClick={() => handleDelete(selectedNote.id)} className="text-red-400/80 hover:text-red-400 font-bold tracking-wide transition-colors uppercase text-[11px]">Collapse Node</button>
             </div>
           </div>
         </div>

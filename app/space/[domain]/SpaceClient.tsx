@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase'; //  修改为这一行
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
@@ -11,7 +11,7 @@ interface Note {
   title: string;
   content: string;
   category: string;
-  inserted_at: string; // 👈 已修正
+  inserted_at: string;
 }
 
 const SPACE_CONFIGS: Record<string, { title: string; icon: string; bg: string; text: string; border: string; btn: string }> = {
@@ -39,7 +39,7 @@ export default function SpaceClient({ domain }: { domain: string }) {
         .from('notes')
         .select('*')
         .eq('category', domain)
-        .order('inserted_at', { ascending: false }); // 👈 已修正
+        .order('inserted_at', { ascending: false });
 
       if (error) throw error;
       setNotes((data as Note[]) || []);
@@ -103,6 +103,7 @@ export default function SpaceClient({ domain }: { domain: string }) {
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fade-in relative z-10">
       
+      {/* 顶部标题栏 */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-black/[0.05] dark:border-white/[0.05] pb-6">
         <div className="flex items-center space-x-4">
           <div className={`text-4xl bg-white dark:bg-[#1C1C1E] p-4 rounded-2xl border ${config.border} shadow-sm`}>
@@ -126,6 +127,7 @@ export default function SpaceClient({ domain }: { domain: string }) {
         </Link>
       </div>
 
+      {/* 搜索框 */}
       <div className="relative max-w-md">
         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm">⌕</span>
         <input 
@@ -137,12 +139,15 @@ export default function SpaceClient({ domain }: { domain: string }) {
         />
       </div>
 
+      {/* 主体两栏布局 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
+        {/* 左栏：Terminal Launchpad */}
         <div className="lg:col-span-1 space-y-4">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Terminal Launchpad</h2>
           <div className={`p-6 bg-white/50 dark:bg-[#1C1C1E]/50 backdrop-blur-xl border ${config.border} rounded-[2rem] space-y-4 shadow-sm`}>
             
+            {/* 1号标准卡片 */}
             <button 
               onClick={() => router.push(`/terminal?category=${domain}`)}
               className={`w-full py-4 ${config.bg} ${config.text} border ${config.border} hover:bg-black/5 dark:hover:bg-white/5 rounded-xl text-sm font-semibold shadow-sm transition-all flex flex-col items-center justify-center space-y-1`}
@@ -151,6 +156,7 @@ export default function SpaceClient({ domain }: { domain: string }) {
               <span>Initialize Standard Block</span>
             </button>
 
+            {/* 2号词汇卡片 */}
             {domain === 'learning' && (
               <button 
                 onClick={() => router.push(`/terminal?category=learning&mode=word`)}
@@ -158,6 +164,27 @@ export default function SpaceClient({ domain }: { domain: string }) {
               >
                 <span className="text-xl">🔤</span>
                 <span>Vocabulary Entry Mode</span>
+              </button>
+            )}
+
+            {/* 🚀 新增 3号常用命令快捷舱卡片（仅在 Knowledge 区域展示） */}
+            {domain === 'learning' && (
+              <button 
+                onClick={() => router.push(`/space/${domain}/commands`)} // 👈 修正为你的实际路由
+                className="w-full py-4 bg-gradient-to-br from-slate-900 to-slate-950 text-slate-100 hover:from-slate-800 hover:to-slate-900 border border-slate-800 rounded-xl text-sm font-semibold shadow-md hover:scale-[1.02] transition-transform flex flex-col items-center justify-center space-y-1"
+              >
+                <span className="text-xl">💻</span>
+                <span>Terminal Cheat Sheet</span>
+              </button>
+            )}
+            {/* 🚀 新增：生活区专属 - 全球时钟快捷舱卡片 */}
+            {domain === 'life' && (
+              <button 
+                onClick={() => router.push(`/space/${domain}/timezone`)}
+                className="w-full py-4 bg-gradient-to-br from-emerald-900 to-emerald-950 text-emerald-100 hover:from-emerald-800 hover:to-emerald-900 border border-emerald-800 rounded-xl text-sm font-semibold shadow-md hover:scale-[1.02] transition-transform flex flex-col items-center justify-center space-y-1"
+              >
+                <span className="text-xl">🌍</span>
+                <span>Global Time Sync</span>
               </button>
             )}
 
@@ -169,6 +196,7 @@ export default function SpaceClient({ domain }: { domain: string }) {
           </div>
         </div>
 
+        {/* 右栏：Space Blocks */}
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Space Blocks ({filteredNotes.length})</h2>
           
@@ -219,7 +247,7 @@ export default function SpaceClient({ domain }: { domain: string }) {
                     
                     <div className="flex items-center justify-between mt-5 pt-4 border-t border-black/[0.03] dark:border-white/[0.03]">
                       <span className="text-xs text-gray-400 font-mono">
-                        {new Date(note.inserted_at).toLocaleDateString()} {/* 👈 已修正 */}
+                        {new Date(note.inserted_at).toLocaleDateString()}
                       </span>
                       <button 
                         onClick={() => handleDelete(note.id)} 
