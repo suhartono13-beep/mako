@@ -15,6 +15,22 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+  supabase.auth.getSession().then(({ data: { session }, error }) => {
+    if (error) {
+      // refresh token 失效，静默清除
+      supabase.auth.signOut();
+    }
+    setSession(session);
+  });
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    setSession(session);
+  });
+
+  return () => subscription.unsubscribe();
+}, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);

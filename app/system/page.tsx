@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 export default function SystemPage() {
   const [copied, setCopied] = useState(false);
 
-  // 🌟 核心硬核功能：一键生成给新对话 AI 的初始化 prompt
  // 🌟 核心硬核功能：一键生成给新对话 AI 的初始化 prompt
   const generateAiPrompt = () => {
     const core = SYSTEM_MANIFEST.core;
