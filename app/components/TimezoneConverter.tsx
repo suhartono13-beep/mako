@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 
 // 预设的可选时区库
 const AVAILABLE_ZONES = [
